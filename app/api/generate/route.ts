@@ -1,21 +1,16 @@
-import OpenAI from "openai";
+import { GoogleGenerativeAI } from "@google/generative-ai";
 import { NextResponse } from "next/server";
 
 export async function POST(req: Request) {
   try {
-    const apiKey = process.env.OPENAI_API_KEY;
-
-    console.log("ENV KEY:", apiKey);
-    console.log("API KEY EXISTS:", !!apiKey);
+    const apiKey = process.env.GOOGLE_API_KEY;
 
     if (!apiKey) {
       return NextResponse.json(
-        { error: "API key is missing. Check .env.local." },
+        { error: "Google API key is missing. Check environment variables." },
         { status: 500 }
       );
     }
-
-    const client = new OpenAI({ apiKey });
 
     const { notes } = await req.json();
 
@@ -26,12 +21,10 @@ export async function POST(req: Request) {
       );
     }
 
-    const response = await client.responses.create({
-      model: "gpt-4.1-mini",
-      input: [
-        {
-          role: "system",
-          content: `
+    const genAI = new GoogleGenerativeAI(apiKey);
+    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+
+    const prompt = `
 You are a study assistant.
 
 Given the student's notes, create:
@@ -79,21 +72,27 @@ Return ONLY valid JSON in this exact format:
     }
   ]
 }
-          `,
-        },
-        {
-          role: "user",
-          content: notes,
-        },
-      ],
-    });
 
-    const text = response.output_text;
-    const parsed = JSON.parse(text);
+Notes:
+${notes}
+`;
+
+    const result = await model.generateContent(prompt);
+    const text = result.response.text();
+
+    let parsed;
+    try {
+      parsed = JSON.parse(text);
+    } catch {
+      return NextResponse.json(
+        { error: "Model returned invalid JSON." },
+        { status: 500 }
+      );
+    }
 
     return NextResponse.json(parsed);
   } catch (error) {
-    console.error("API route error:", error);
+    console.error("Gemini route error:", error);
     return NextResponse.json(
       { error: "Something went wrong while generating study materials." },
       { status: 500 }
